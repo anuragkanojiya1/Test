@@ -1,111 +1,197 @@
 package com.example.arwebmodel
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBarsPadding
-import androidx.compose.material3.Text
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.example.arwebmodel.ui.theme.ARWebModelTheme
-import com.google.android.filament.Engine
-import com.google.ar.core.Anchor
-import com.google.ar.core.Config
-import com.google.ar.core.Frame
-import com.google.ar.core.Plane
-import com.google.ar.core.TrackingFailureReason
-import io.github.sceneview.ar.ARScene
-import io.github.sceneview.ar.arcore.createAnchorOrNull
-import io.github.sceneview.ar.arcore.getUpdatedPlanes
-import io.github.sceneview.ar.arcore.isValid
-import io.github.sceneview.ar.getDescription
-import io.github.sceneview.ar.node.AnchorNode
-import io.github.sceneview.ar.rememberARCameraNode
-import io.github.sceneview.collision.Vector3
-import io.github.sceneview.loaders.MaterialLoader
-import io.github.sceneview.loaders.ModelLoader
-import io.github.sceneview.node.CubeNode
-import io.github.sceneview.node.ModelNode
-import io.github.sceneview.node.Node
-import io.github.sceneview.rememberCollisionSystem
-import io.github.sceneview.rememberEngine
-import io.github.sceneview.rememberMaterialLoader
-import io.github.sceneview.rememberModelLoader
-import io.github.sceneview.rememberNodes
-import io.github.sceneview.rememberOnGestureListener
-import io.github.sceneview.rememberView
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okio.IOException
-import java.io.File
-import java.io.FileOutputStream
-
-private val kModelFile = listOf(
-    "https://modelviewer.dev/shared-assets/models/Astronaut.glb",
-    "https://modelviewer.dev/shared-assets/models/Astronaut.glb",
-    "https://modelviewer.dev/shared-assets/models/Astronaut.glb"
-)
+import io.appwrite.Client
+import io.appwrite.exceptions.AppwriteException
+import io.appwrite.services.Databases
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-    private var modelIndex = 0 // Keeps track of the current model
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         setContent {
+            AppwriteDatabaseScreen(this@MainActivity)
+        }
+    }
+}
 
-            // Function to download the GLB model and save it locally
-            fun downloadModel(url: String, outputFile: File): Boolean {
-                val client = OkHttpClient()
-                val request = Request.Builder().url(url).build()
+@Composable
+fun AppwriteDatabaseScreen(context: Context) {
+    val client = remember {
+        Client(context = context)
+            .setEndpoint("https://cloud.appwrite.io/v1")
+            .setProject("67967ef40000a54f307f")
+    }
 
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) throw IOException("Failed to download file: $url")
+    val database = remember { Databases(client) }
+    val databaseId = "67967f1500142051f871"
+    val collectionId = "67967fe50031892ab5b0"
 
-                    response.body?.let { body ->
-                        body.byteStream().use { input ->
-                            FileOutputStream(outputFile).use { output ->
-                                input.copyTo(output)
+    var id by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf("") }
+    var documents by remember { mutableStateOf(emptyList<Map<String, Any>>()) }
+
+    val scope = rememberCoroutineScope()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        TextField(
+            value = id,
+            onValueChange = { id = it },
+            label = { Text("ID") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        TextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Name") },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Button(
+                onClick = {
+                    scope.launch {
+                        try {
+                            database.createDocument(
+                                databaseId = databaseId,
+                                collectionId = collectionId,
+                                documentId = id,
+                                data = mapOf("id" to id, "name" to name)
+                            )
+                            message = "Document added successfully!"
+                            fetchDocuments(database, databaseId, collectionId) { fetchedDocs ->
+                                documents = fetchedDocs
                             }
+                        } catch (e: AppwriteException) {
+                            message = "Error adding document: ${e.message}"
                         }
                     }
                 }
-                return true
+            ) {
+                Text("Add")
             }
 
-// Usage in AR scene setup
-            val modelUrl = "https://modelviewer.dev/shared-assets/models/Astronaut.glb"
-            val localFile = File(context.filesDir, "Astronaut.glb")
+            Button(
+                onClick = {
+                    scope.launch {
+                        try {
+                            database.updateDocument(
+                                databaseId = databaseId,
+                                collectionId = collectionId,
+                                documentId = id,
+                                data = mapOf("id" to id, "name" to name)
+                            )
+                            message = "Document updated successfully!"
+                            fetchDocuments(database, databaseId, collectionId) { fetchedDocs ->
+                                documents = fetchedDocs
+                            }
+                        } catch (e: AppwriteException) {
+                            message = "Error updating document: ${e.message}"
+                        }
+                    }
+                }
+            ) {
+                Text("Update")
+            }
 
-// Download the GLB model
-            val isDownloaded = downloadModel(modelUrl, localFile)
+            Button(
+                onClick = {
+                    scope.launch {
+                        try {
+                            database.deleteDocument(
+                                databaseId = databaseId,
+                                collectionId = collectionId,
+                                documentId = id
+                            )
+                            message = "Document deleted successfully!"
+                            fetchDocuments(database, databaseId, collectionId) { fetchedDocs ->
+                                documents = fetchedDocs
+                            }
+                        } catch (e: AppwriteException) {
+                            message = "Error deleting document: ${e.message}"
+                        }
+                    }
+                }
+            ) {
+                Text("Delete")
+            }
 
-            if (isDownloaded) {
-                // Now load the model from the downloaded file
-                loadModelInstanceAsync(localFile.path) { modelInstance ->
-                    modelInstance?.let {
-                        val modelNode = Node()
-                        modelNode.renderable = it
-                        modelNode.worldPosition = Vector3(0f, 0f, 0f)
-                        session.addChild(modelNode)
+            Button(
+                onClick = {
+                    scope.launch {
+                        fetchDocuments(database, databaseId, collectionId) { fetchedDocs ->
+                            documents = fetchedDocs
+                        }
+                    }
+                }
+            ) {
+                Text("Fetch")
+            }
+        }
+
+        Text(
+            text = message,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            items(documents.size) { index ->
+                val doc = documents[index]
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(4.dp),
+                    elevation = CardDefaults.cardElevation(4.dp)
+                ) {
+                    Column(modifier = Modifier.padding(8.dp)) {
+                        Text(text = "ID: ${doc["id"]}", style = MaterialTheme.typography.bodyMedium)
+                        Text(text = "Name: ${doc["name"]}", style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             }
-
         }
+    }
+}
+
+suspend fun fetchDocuments(
+    database: Databases,
+    databaseId: String,
+    collectionId: String,
+    onDocumentsFetched: (List<Map<String, Any>>) -> Unit
+) {
+    try {
+        val response = database.listDocuments(databaseId = databaseId, collectionId = collectionId)
+        val docs = response.documents.map { it.data as Map<String, Any> }
+        onDocumentsFetched(docs)
+    } catch (e: AppwriteException) {
+        onDocumentsFetched(emptyList())
     }
 }
