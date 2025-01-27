@@ -1,5 +1,7 @@
 package com.example.arwebmodel
 
+import android.media.MediaPlayer
+import android.util.Log
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -7,6 +9,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,6 +29,7 @@ import com.google.ar.core.Config
 import com.google.ar.core.Frame
 import com.google.ar.core.Plane
 import com.google.ar.core.TrackingFailureReason
+import dev.romainguy.kotlin.math.Float3
 import io.github.sceneview.ar.ARScene
 import io.github.sceneview.ar.arcore.createAnchorOrNull
 import io.github.sceneview.ar.arcore.getUpdatedPlanes
@@ -43,10 +48,16 @@ import io.github.sceneview.rememberModelLoader
 import io.github.sceneview.rememberNodes
 import io.github.sceneview.rememberOnGestureListener
 import io.github.sceneview.rememberView
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.math.BigInteger
+import kotlin.random.Random
 
 
 private val kModelFile = listOf(
-    "models/forest.glb",
+    "models/forest2.glb",
     "models/forest2.glb"
 )
 @Composable
@@ -58,131 +69,95 @@ fun ARScreen() {
         val engine = rememberEngine()
         val modelLoader = rememberModelLoader(engine)
         val materialLoader = rememberMaterialLoader(engine)
-        val cameraNode = rememberARCameraNode(engine)
         val childNodes = rememberNodes()
-        val view = rememberView(engine)
-        val collisionSystem = rememberCollisionSystem(view)
-
-        var planeRenderer by remember { mutableStateOf(true) }
 
         var trackingFailureReason by remember {
             mutableStateOf<TrackingFailureReason?>(null)
         }
+
         var frame by remember { mutableStateOf<Frame?>(null) }
+        var modelNode by remember { mutableStateOf<ModelNode?>(null) }
+        var modelNode2 by remember { mutableStateOf<ModelNode?>(null) }
+
+        val context = LocalContext.current
+        var score by remember { mutableStateOf(0) } // Initialize score
+        var mediaPlayer: MediaPlayer? by remember { mutableStateOf(null) }
+
+//        DisposableEffect(context) {
+//            mediaPlayer = MediaPlayer.create(context, R.raw.ufo_sound)
+//
+//            onDispose {
+//                mediaPlayer?.release()
+//            }
+//        }
+
         ARScene(
             modifier = Modifier.fillMaxSize(),
             childNodes = childNodes,
             engine = engine,
-            view = view,
             modelLoader = modelLoader,
-            collisionSystem = collisionSystem,
             sessionConfiguration = { session, config ->
                 config.depthMode =
-                    when (session.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
-                        true -> Config.DepthMode.AUTOMATIC
-                        else -> Config.DepthMode.DISABLED
+                    if (session.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
+                        Config.DepthMode.AUTOMATIC
+                    } else {
+                        Config.DepthMode.DISABLED
                     }
                 config.instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
                 config.lightEstimationMode =
                     Config.LightEstimationMode.ENVIRONMENTAL_HDR
             },
-            cameraNode = cameraNode,
-            planeRenderer = planeRenderer,
-            onTrackingFailureChanged = {
-                trackingFailureReason = it
-            },
-            onSessionUpdated = { session, updatedFrame ->
+            planeRenderer = false,
+            onSessionUpdated = { _, updatedFrame ->
                 frame = updatedFrame
 
                 if (childNodes.isEmpty()) {
+
+//                    updatedFrame.getUpdatedPlanes()
+//                        .firstOrNull { it.type == Plane.Type.HORIZONTAL_UPWARD_FACING }
+//                        ?.let { it.createAnchorOrNull(it.centerPose) }?.let { anchor ->
+//                            val giftBoxNode = AnchorNode(engine, anchor).apply {
+//                                modelNode2 = ModelNode(
+//                                    modelInstance = modelLoader.createModelInstance(kModelFile[0]),
+//                                    scaleToUnits = 1f
+//                                ).apply {
+//                                    isRotationEditable = true
+//                                    isScaleEditable = true
+//                                    isPositionEditable = true
+//                                    isEditable = true
+//                                    isTouchable = true
+//                                    name = "giftbox"
+//                                }
+//                                modelNode2?.position = Float3(
+//                                    Random.nextFloat(), 0f,
+//                                    Random.nextFloat()
+//                                )
+//
+//                                addChildNode(modelNode2!!)
+//                            }
+//                            childNodes += giftBoxNode
+//                            childNodes.indexOf(giftBoxNode)
+//                            Log.d("gift Node:", childNodes.indexOf(giftBoxNode).toString())
+//                        }
+
                     updatedFrame.getUpdatedPlanes()
                         .firstOrNull { it.type == Plane.Type.HORIZONTAL_UPWARD_FACING }
                         ?.let { it.createAnchorOrNull(it.centerPose) }?.let { anchor ->
-                            childNodes += createAnchorNode(
-                                engine = engine,
-                                modelLoader = modelLoader,
-                                materialLoader = materialLoader,
-                                anchor = anchor
-                            )
+                            val helmetNode = AnchorNode(engine, anchor).apply {
+                                modelNode = ModelNode(
+                                    modelInstance = modelLoader.createModelInstance(kModelFile[0]),
+                                    scaleToUnits = 1f
+                                ).apply {
+                                    isRotationEditable = true
+                                    isEditable = true
+                                    name = "helmet"
+                                }
+                                addChildNode(modelNode!!)
+                            }
+                            childNodes += helmetNode
                         }
                 }
-            },
-            onGestureListener = rememberOnGestureListener(
-                onSingleTapConfirmed = { motionEvent, node ->
-                    if (node == null) {
-                        val hitResults = frame?.hitTest(motionEvent.x, motionEvent.y)
-                        hitResults?.firstOrNull {
-                            it.isValid(
-                                depthPoint = false,
-                                point = false
-                            )
-                        }?.createAnchorOrNull()
-                            ?.let { anchor ->
-                                planeRenderer = false
-                                childNodes += createAnchorNode(
-                                    engine = engine,
-                                    modelLoader = modelLoader,
-                                    materialLoader = materialLoader,
-                                    anchor = anchor
-                                )
-                            }
-                    }
-                })
-        )
-        Text(
-            modifier = Modifier
-                .systemBarsPadding()
-                .fillMaxWidth()
-                .align(Alignment.TopCenter)
-                .padding(top = 16.dp, start = 32.dp, end = 32.dp),
-            textAlign = TextAlign.Center,
-            fontSize = 28.sp,
-            color = Color.White,
-            text = trackingFailureReason?.let {
-                it.getDescription(LocalContext.current)
-            } ?: if (childNodes.isEmpty()) {
-                stringResource(R.string.app_name)
-            } else {
-                stringResource(R.string.app_name)
             }
         )
     }
 }
-    fun createAnchorNode(
-        engine: Engine,
-        modelLoader: ModelLoader,
-        materialLoader: MaterialLoader,
-        anchor: Anchor
-    ): AnchorNode {
-        // Get the current model file and increment the index
-        val currentModel = kModelFile[0]
-        val anchorNode = AnchorNode(engine = engine, anchor = anchor)
-        val modelNode = ModelNode(
-            modelInstance = modelLoader.createModelInstance(
-                currentModel
-            ),
-            // Scale to fit in a 0.5 meters cube
-            scaleToUnits = 1f
-        ).apply {
-            // Model Node needs to be editable for independent rotation from the anchor rotation
-            isEditable = true
-            editableScaleRange = 1f..2.75f
-        }
-        val boundingBoxNode = CubeNode(
-            engine,
-            size = modelNode.extents,
-            center = modelNode.center,
-            materialInstance = materialLoader.createColorInstance(Color.White.copy(alpha = 0.5f))
-        ).apply {
-            isVisible = false
-        }
-        modelNode.addChildNode(boundingBoxNode)
-        anchorNode.addChildNode(modelNode)
-
-        listOf(modelNode, anchorNode).forEach {
-            it.onEditingChanged = { editingTransforms ->
-                boundingBoxNode.isVisible = editingTransforms.isNotEmpty()
-            }
-        }
-        return anchorNode
-    }
