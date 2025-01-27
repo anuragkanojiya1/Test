@@ -162,7 +162,7 @@ fun AppwriteDatabaseScreen(context: Context) {
 
         LazyColumn(
             modifier = Modifier.fillMaxWidth()
-        ) {
+        ) { 
             items(documents.size) { index ->
                 val doc = documents[index]
                 Card(
