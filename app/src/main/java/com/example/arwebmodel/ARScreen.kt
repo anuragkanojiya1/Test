@@ -162,11 +162,11 @@ fun ARScreen() {
                 currentModel
             ),
             // Scale to fit in a 0.5 meters cube
-            scaleToUnits = 0.5f
+            scaleToUnits = 1f
         ).apply {
             // Model Node needs to be editable for independent rotation from the anchor rotation
             isEditable = true
-            editableScaleRange = 0.2f..0.75f
+            editableScaleRange = 1f..2.75f
         }
         val boundingBoxNode = CubeNode(
             engine,
